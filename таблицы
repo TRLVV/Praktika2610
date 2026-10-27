@@ -1,0 +1,67 @@
+CREATE TABLE Regions (
+	region_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+	region_name VARCHAR(50) NOT NULL
+);
+
+CREATE TABLE Servers (
+	server_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+	region INT REFERENCES Regions(region_id) NOT NULL,
+	ip_address VARCHAR(45) NOT NULL,
+	port INT NOT NULL,
+	status VARCHAR(20) NOT NULL
+);
+
+CREATE TABLE Roles(
+	role_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+	role_name VARCHAR(50) NOT NULL,
+	description TEXT,
+	permissions VARCHAR(50)
+);
+
+CREATE TABLE Users (
+	user_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+	rolename INT REFERENCES Roles(role_id) NOT NULL,
+	username VARCHAR(50) NOT NULL,
+	password VARCHAR(50) NOT NULL,
+	created_at TIMESTAMP NOT NULL
+);
+
+CREATE TABLE Stats (
+	user_id INT PRIMARY KEY NOT NULL,
+	games_played INT NOT NULL,
+	wins INT,
+	losses INT,
+	WLR INT
+);
+
+CREATE TABLE Bans (
+	ban_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+	banned_user_id INT REFERENCES Users(user_id) NOT NULL,
+	banned_by_user_id INT REFERENCES Users(user_id) NOT NULL,
+	reason TEXT,
+	banned_at TIMESTAMP NOT NULL,
+	ban_expires TIMESTAMP
+);
+
+CREATE TABLE Sessions (
+	session_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+	user_session INT REFERENCES Users(user_id) NOT NULL,
+	startd_at TIMESTAMP NOT NULL,
+	ended_at TIMESTAMP
+);
+
+CREATE TABLE Games (
+	game_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+	game_name VARCHAR(200)
+);
+
+CREATE TABLE Matches (
+	match_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+	games INT REFERENCES Games(game_id) NOT NULL,
+	sessions INT REFERENCES Sessions(session_id),
+	started_at TIMESTAMP NOT NULL,
+	ended_at TIMESTAMP,
+	resultofmatch VARCHAR(50),
+	click_count INT,
+	guess_attempts INT
+);
