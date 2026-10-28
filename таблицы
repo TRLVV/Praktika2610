@@ -27,14 +27,6 @@ CREATE TABLE Users (
 	created_at TIMESTAMP NOT NULL DEFAULT now()
 );
 
-CREATE TABLE Stats (
-	user_id INT PRIMARY KEY REFERENCES Users(user_id) ON DELETE CASCADE,
-	games_played INT NOT NULL CHECK (games_played >= 0),
-	wins INT CHECK (wins >= 0),
-	losses INT CHECK (losses >= 0),
-	WLR FLOAT CHECK (WLR >= 0)
-);
-
 CREATE TABLE Bans (
 	ban_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
 	banned_user_id INT REFERENCES Users(user_id) ON DELETE CASCADENOT NULL,
@@ -67,7 +59,7 @@ CREATE TABLE Matches (
 	CHECK (ended_at IS NULL OR ended_at > started_at)
 );
 
-CREATE TABLE MatchParticipants (
+CREATE TABLE MatchStats (
 	match_id INT REFERENCES Matches(match_id) ON DELETE CASCADE NOT NULL,
 	user_id INT REFERENCES Users(user_id) ON DELETE CASCADE NOT NULL,
 	click_count INT CHECK (click_count >= 0),
