@@ -60,9 +60,6 @@ CREATE TABLE Matches (
 	games INT REFERENCES Games(game_id) NOT NULL,
 	started_at TIMESTAMP NOT NULL,
 	ended_at TIMESTAMP,
-	resultofmatch VARCHAR(50),
-	click_count INT,
-	guess_attempts INT
 );
 
 CREATE TABLE MatchParticipants (
