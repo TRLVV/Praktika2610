@@ -1,19 +1,19 @@
 CREATE TABLE Regions (
 	region_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-	region_name VARCHAR(50) NOT NULL
+	region_name VARCHAR(50) UNIQUE NOT NULL
 );
 
 CREATE TABLE Servers (
 	server_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
 	region INT REFERENCES Regions(region_id) NOT NULL,
-	ip_address VARCHAR(45) NOT NULL,
-	port INT NOT NULL,
-	status VARCHAR(20) NOT NULL
+	ip_address VARCHAR(45) UNIQUE (port BETWEEN 1 AND 65535) NOT NULL,
+	port INT UNIQUE NOT NULL,
+	status VARCHAR(20) NOT NULL CHECK (status IN ('online', 'offline', 'maintance'))
 );
 
 CREATE TABLE Roles(
 	role_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-	role_name VARCHAR(50) NOT NULL,
+	role_name VARCHAR(50) NOT NULL UNIQUE CHECK (role_name IN ('admin', 'mod', 'user')),
 	description TEXT,
 	permissions VARCHAR(50)
 );
@@ -21,53 +21,57 @@ CREATE TABLE Roles(
 CREATE TABLE Users (
 	user_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
 	rolename INT REFERENCES Roles(role_id) NOT NULL,
-	username VARCHAR(50) NOT NULL,
-	password VARCHAR(50) NOT NULL,
-	created_at TIMESTAMP NOT NULL
+	username VARCHAR(50) NOT NULL UNIQUE,
+	password VARCHAR(200) NOT NULL,
+	created_at TIMESTAMP NOT NULL DEFAULT now()
 );
 
 CREATE TABLE Stats (
 	user_id INT PRIMARY KEY REFERENCES Users(user_id),
-	games_played INT NOT NULL,
-	wins INT,
-	losses INT,
-	WLR FLOAT
+	games_played INT NOT NULL CHECK (game_played >= 0),
+	wins INT CHECK (wins >= 0),
+	losses INT CHECK (losses >= 0),
+	WLR FLOAT CHECK (WLR >= 0)
 );
 
 CREATE TABLE Bans (
 	ban_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
 	banned_user_id INT REFERENCES Users(user_id) NOT NULL,
 	banned_by_user_id INT REFERENCES Users(user_id) NOT NULL,
-	reason TEXT,
-	banned_at TIMESTAMP NOT NULL,
-	ban_expires TIMESTAMP
+	reason TEXT NOT NULL,
+	banned_at TIMESTAMP NOT NULL DEFAULT now(),
+	ban_expires TIMESTAMP,
+	CHECK (banned_user_id <> banned_by_user_id),
+	CHECK (ban_expires IS NULL OR ban_expires > banned_at)
 );
 
 CREATE TABLE Sessions (
 	session_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
 	user_session INT REFERENCES Users(user_id) NOT NULL,
-	startd_at TIMESTAMP NOT NULL,
-	ended_at TIMESTAMP
+	started_at TIMESTAMP NOT NULL,
+	ended_at TIMESTAMP,
+	CHECK (ended_at IS NULL OR ended_at > started_at)
 );
 
 CREATE TABLE Games (
 	game_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-	game_name VARCHAR(200)
+	game_name VARCHAR(200) NOT NULL UNIQUE CHECK (game_name IN ('clicker', 'tictactoe', 'clicker'))
 );
 
 CREATE TABLE Matches (
 	match_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
 	games INT REFERENCES Games(game_id) NOT NULL,
-	started_at TIMESTAMP NOT NULL,
+	started_at TIMESTAMP NOT NULL DEFAULT now(),
 	ended_at TIMESTAMP,
+	CHECK (ended_at IS NULL OR ended_at > started_at)
 );
 
 CREATE TABLE MatchParticipants (
 	match_id INT REFERENCES Matches(match_id) NOT NULL,
 	user_id INT REFERENCES Users(user_id) NOT NULL,
-	session_id INT REFERENCES Sessions(session_id),
-	click_count INT,
-	guess_attempts INT,
-	result VARCHAR(50),
+	session_id INT REFERENCES Sessions(session_id) NOT NULL,
+	click_count INT CHECK (click_count >= 0),
+	guess_attempts INT CHECK (guess_attempts >= 0),
+	result VARCHAR(50) CHECK (result in('win', 'loss', 'draw')),
 	PRIMARY KEY (match_id, user_id)
 );
