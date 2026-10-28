@@ -58,10 +58,19 @@ CREATE TABLE Games (
 CREATE TABLE Matches (
 	match_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
 	games INT REFERENCES Games(game_id) NOT NULL,
-	sessions INT REFERENCES Sessions(session_id),
 	started_at TIMESTAMP NOT NULL,
 	ended_at TIMESTAMP,
 	resultofmatch VARCHAR(50),
 	click_count INT,
 	guess_attempts INT
+);
+
+CREATE TABLE MatchParticipants (
+	match_id INT REFERENCES Matches(match_id) NOT NULL,
+	user_id INT REFERENCES Users(user_id) NOT NULL,
+	session_id INT REFERENCES Sessions(session_id),
+	click_count INT,
+	guess_attempts INT,
+	result VARCHAR(50),
+	PRIMARY KEY (match_id, user_id)
 );
