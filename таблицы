@@ -31,7 +31,7 @@ CREATE TABLE Stats (
 	games_played INT NOT NULL,
 	wins INT,
 	losses INT,
-	WLR INT
+	WLR FLOAT
 );
 
 CREATE TABLE Bans (
