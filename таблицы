@@ -27,7 +27,7 @@ CREATE TABLE Users (
 );
 
 CREATE TABLE Stats (
-	user_id INT PRIMARY KEY NOT NULL,
+	user_id INT PRIMARY KEY REFERENCES Users(user_id),
 	games_played INT NOT NULL,
 	wins INT,
 	losses INT,
