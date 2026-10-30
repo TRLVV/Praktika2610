@@ -4,9 +4,9 @@ import psycopg2
 from psycopg2 import IntegrityError
 import bcrypt
 import random
-import time
 from datetime import datetime
 
+# --- КОНФИГУРАЦИЯ БД ---
 DB_CONFIG = {
     "host": "localhost",
     "port": 5432,
@@ -15,7 +15,7 @@ DB_CONFIG = {
     "password": "12345678"
 }
 
-# Цвета тёмной темы
+# --- ЦВЕТА ТЁМНОЙ ТЕМЫ ---
 BG_COLOR = "#1e1e1e"
 FG_COLOR = "#e0e0e0"
 BTN_BG = "#2d2d2d"
@@ -48,7 +48,7 @@ class App:
         self.root.geometry("900x600")
         self.root.configure(bg=BG_COLOR)
 
-        # Настройка ttk стилей для тёмной темы
+        # Настройка ttk стилей
         style = ttk.Style()
         style.theme_use('clam')
         style.configure('.', background=BG_COLOR, foreground=FG_COLOR, fieldbackground=ENTRY_BG)
@@ -86,6 +86,69 @@ class App:
         entry = tk.Entry(parent, width=width, bg=ENTRY_BG, fg=ENTRY_FG, insertbackground=FG_COLOR, show=show)
         return entry
 
+    # --- ЭКСПОРТ В EXCEL ---
+    def export_to_excel(self, data, filename, headers):
+        if not data:
+            messagebox.showwarning("Предупреждение", "Нет данных для экспорта.")
+            return
+
+        try:
+            from openpyxl import Workbook
+            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Data"
+
+            # Стили
+            header_font = Font(bold=True, color="FFFFFF", size=11)
+            header_fill = PatternFill(start_color="#007acc", end_color="#007acc", fill_type="solid")
+            header_alignment = Alignment(horizontal="center", vertical="center")
+            thin_border = Border(
+                left=Side(style='thin'), right=Side(style='thin'),
+                top=Side(style='thin'), bottom=Side(style='thin')
+            )
+
+            # Заголовки
+            for col_num, header in enumerate(headers, 1):
+                cell = ws.cell(row=1, column=col_num, value=header)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = header_alignment
+                cell.border = thin_border
+
+            # Данные
+            for row_num, row_data in enumerate(data, 2):
+                for col_num, value in enumerate(row_data, 1):
+                    cell = ws.cell(row=row_num, column=col_num, value=value)
+                    cell.border = thin_border
+                    if isinstance(value, datetime):
+                        cell.number_format = 'YYYY-MM-DD HH:MM:SS'
+
+            # Автоширина
+            for col_cells in ws.columns:
+                max_length = 0
+                col_letter = col_cells[0].column_letter
+                for cell in col_cells:
+                    try:
+                        length = len(str(cell.value or ""))
+                        if length > max_length:
+                            max_length = length
+                    except:
+                        pass
+                adjusted_width = min(max_length + 4, 50)
+                ws.column_dimensions[col_letter].width = adjusted_width
+
+            filepath = f"{filename}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            wb.save(filepath)
+            messagebox.showinfo("Успех", f"Файл сохранён:\n{filepath}")
+
+        except ImportError:
+            messagebox.showerror("Ошибка", "Библиотека openpyxl не установлена.\npip install openpyxl")
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось сохранить файл:\n{e}")
+
+    # --- АВТОРИЗАЦИЯ И РЕГИСТРАЦИЯ ---
     def show_auth_frame(self):
         self.clear_frame()
         self.current_user = None
@@ -94,7 +157,6 @@ class App:
         frame.pack(expand=True)
 
         self.create_label(frame, "=== ГЛАВНОЕ МЕНЮ ===", font=("Arial", 16, "bold")).pack(pady=10)
-
         self.create_button(frame, "Войти", self.show_login).pack(pady=5)
         self.create_button(frame, "Регистрация", self.show_register).pack(pady=5)
         self.create_button(frame, "Выход", self.root.quit).pack(pady=5)
@@ -127,7 +189,7 @@ class App:
                 cur.execute("""
                     SELECT u.user_id, u.username, u.password, r.role_name
                     FROM Users u
-                    JOIN Roles r ON u.rolename = r.role_id
+                    JOIN Roles r ON u.role_id = r.role_id
                     WHERE u.username = %s
                 """, (username,))
                 row = cur.fetchone()
@@ -138,6 +200,7 @@ class App:
 
                 user_id, uname, _, role_name = row
 
+                # Проверка бана
                 cur.execute("""
                     SELECT reason, ban_expires FROM Bans
                     WHERE banned_user_id = %s
@@ -150,8 +213,9 @@ class App:
                     messagebox.showerror("ЗАБАНЕН", f"Вы забанены {expires}\nПричина: {ban[0]}")
                     return
 
+                # Создание сессии
                 cur.execute(
-                    "INSERT INTO Sessions (user_session) VALUES (%s) RETURNING session_id",
+                    "INSERT INTO Sessions (user_id) VALUES (%s) RETURNING session_id",
                     (user_id,)
                 )
                 session_id = cur.fetchone()[0]
@@ -209,9 +273,15 @@ class App:
                     messagebox.showerror("Ошибка", "Роль 'user' не найдена в БД.")
                     return
 
+                cur.execute("SELECT region_id FROM Regions ORDER BY region_id LIMIT 1")
+                region_row = cur.fetchone()
+                if not region_row:
+                    messagebox.showerror("Ошибка", "Нет доступных регионов в БД.")
+                    return
+
                 cur.execute(
-                    "INSERT INTO Users (username, password, rolename) VALUES (%s, %s, %s)",
-                    (username, hash_password(password), role_row[0])
+                    "INSERT INTO Users (username, password, role_id, region_id) VALUES (%s, %s, %s, %s)",
+                    (username, hash_password(password), role_row[0], region_row[0])
                 )
                 self.conn.commit()
                 messagebox.showinfo("Успех", f"Пользователь '{username}' зарегистрирован.")
@@ -229,6 +299,7 @@ class App:
         self.create_button(frame, "Зарегистрироваться", do_register).pack(pady=10)
         self.create_button(frame, "Назад", self.show_auth_frame).pack(pady=5)
 
+    # --- ГЛАВНОЕ МЕНЮ ---
     def show_main_menu(self):
         self.clear_frame()
         frame = tk.Frame(self.root, bg=BG_COLOR, padx=20, pady=20)
@@ -236,10 +307,12 @@ class App:
 
         is_admin = self.current_user["role"] == "admin"
         self.create_label(frame, f"МЕНЮ ({self.current_user['username']} | {self.current_user['role']})",
-                         font=("Arial", 14, "bold")).pack(pady=10)
+                          font=("Arial", 14, "bold")).pack(pady=10)
 
         self.create_button(frame, "Просмотр сессий", self.show_sessions, width=30).pack(pady=5)
         self.create_button(frame, "Результаты матчей", self.show_match_results, width=30).pack(pady=5)
+
+        # Игры теперь обновляют текущее окно
         self.create_button(frame, "Играть в Кликер", self.play_clicker, width=30).pack(pady=5)
         self.create_button(frame, "Играть в Угадай число", self.play_guessnumber, width=30).pack(pady=5)
         self.create_button(frame, "Играть в Крестики-нолики", self.play_tictactoe, width=30).pack(pady=5)
@@ -265,10 +338,14 @@ class App:
             cur.close()
         self.show_auth_frame()
 
+    # --- ПРОСМОТР СЕССИЙ ---
     def show_sessions(self):
         self.clear_frame()
         frame = tk.Frame(self.root, bg=BG_COLOR, padx=10, pady=10)
         frame.pack(fill=tk.BOTH, expand=True)
+
+        # 1. Сначала определяем структуру данных
+        columns = ("ID", "Ник", "Игра", "Начало", "Конец")
 
         filter_frame = tk.Frame(frame, bg=BG_COLOR)
         filter_frame.pack(fill=tk.X, pady=5)
@@ -276,14 +353,14 @@ class App:
         self.create_label(filter_frame, "Фильтр по игре:").pack(side=tk.LEFT)
         game_var = tk.StringVar(value="Все")
         game_combo = ttk.Combobox(filter_frame, textvariable=game_var,
-                                   values=["Все", "clicker", "tictactoe", "guessnumber"], width=15)
+                                  values=["Все", "clicker", "tictactoe", "guessnumber"], width=15)
         game_combo.pack(side=tk.LEFT, padx=5)
 
         self.create_label(filter_frame, "Поиск по нику:").pack(side=tk.LEFT, padx=(10, 0))
         search_entry = self.create_entry(filter_frame, width=20)
         search_entry.pack(side=tk.LEFT, padx=5)
 
-        columns = ("ID", "Ник", "Игра", "Начало", "Конец")
+        # Создаем Treeview ДО кнопок, чтобы лямбды его видели
         tree = ttk.Treeview(frame, columns=columns, show="headings", height=20)
         for col in columns:
             tree.heading(col, text=col)
@@ -294,6 +371,7 @@ class App:
         tree.configure(yscrollcommand=scrollbar.set)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
+        # Теперь определяем load_data, когда tree уже существует
         def load_data():
             for item in tree.get_children():
                 tree.delete(item)
@@ -317,10 +395,9 @@ class App:
             query = f"""
                 SELECT s.session_id, u.username, g.game_name, s.started_at, s.ended_at
                 FROM Sessions s
-                JOIN Users u ON s.user_session = u.user_id
-                LEFT JOIN Matches m ON m.started_at >= s.started_at
-                    AND (m.ended_at IS NULL OR m.ended_at <= s.ended_at)
-                LEFT JOIN Games g ON m.games = g.game_id
+                JOIN Users u ON s.user_id = u.user_id
+                LEFT JOIN Matches m ON m.session_id = s.session_id
+                LEFT JOIN Games g ON m.game_id = g.game_id
                 {where_clause}
                 ORDER BY s.started_at DESC
                 LIMIT 100;
@@ -340,15 +417,28 @@ class App:
             finally:
                 cur.close()
 
+        # 3. И только ТЕПЕРЬ создаем кнопки, ссылаясь на уже существующие tree и load_data
+        self.create_button(filter_frame, "Экспорт в Excel",
+                           lambda: self.export_to_excel(
+                               [tree.item(item)['values'] for item in tree.get_children()],
+                               "sessions",
+                               columns
+                           )).pack(side=tk.LEFT, padx=5)
+
         self.create_button(filter_frame, "Применить фильтр", load_data).pack(side=tk.LEFT, padx=5)
-        load_data()
+
+        load_data()  # Загружаем данные сразу
 
         self.create_button(frame, "Назад", self.show_main_menu).pack(pady=10)
 
+    # --- РЕЗУЛЬТАТЫ МАТЧЕЙ ---
     def show_match_results(self):
         self.clear_frame()
         frame = tk.Frame(self.root, bg=BG_COLOR, padx=10, pady=10)
         frame.pack(fill=tk.BOTH, expand=True)
+
+        # 1. Структура
+        columns = ("MatchID", "Ник", "Игра", "Результат", "Клики", "Попытки", "Дата")
 
         filter_frame = tk.Frame(frame, bg=BG_COLOR)
         filter_frame.pack(fill=tk.X, pady=5)
@@ -356,14 +446,14 @@ class App:
         self.create_label(filter_frame, "Фильтр по игре:").pack(side=tk.LEFT)
         game_var = tk.StringVar(value="Все")
         game_combo = ttk.Combobox(filter_frame, textvariable=game_var,
-                                   values=["Все", "clicker", "tictactoe", "guessnumber"], width=15)
+                                  values=["Все", "clicker", "tictactoe", "guessnumber"], width=15)
         game_combo.pack(side=tk.LEFT, padx=5)
 
         self.create_label(filter_frame, "Поиск по нику:").pack(side=tk.LEFT, padx=(10, 0))
         search_entry = self.create_entry(filter_frame, width=20)
         search_entry.pack(side=tk.LEFT, padx=5)
 
-        columns = ("MatchID", "Ник", "Игра", "Результат", "Клики", "Попытки", "Дата")
+        # 2. Treeview создаем ДО кнопок
         tree = ttk.Treeview(frame, columns=columns, show="headings", height=20)
         for col in columns:
             tree.heading(col, text=col)
@@ -374,6 +464,7 @@ class App:
         tree.configure(yscrollcommand=scrollbar.set)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
+        # 3. Функция загрузки
         def load_data():
             for item in tree.get_children():
                 tree.delete(item)
@@ -400,7 +491,7 @@ class App:
                 FROM MatchStats ms
                 JOIN Users u ON ms.user_id = u.user_id
                 JOIN Matches m ON ms.match_id = m.match_id
-                JOIN Games g ON m.games = g.game_id
+                JOIN Games g ON m.game_id = g.game_id
                 {where_clause}
                 ORDER BY m.started_at DESC
                 LIMIT 100;
@@ -421,11 +512,21 @@ class App:
             finally:
                 cur.close()
 
+        # 4. Кнопки (теперь tree и load_data существуют)
+        self.create_button(filter_frame, "Экспорт в Excel",
+                           lambda: self.export_to_excel(
+                               [tree.item(item)['values'] for item in tree.get_children()],
+                               "match_stats",
+                               columns
+                           )).pack(side=tk.LEFT, padx=5)
+
         self.create_button(filter_frame, "Применить фильтр", load_data).pack(side=tk.LEFT, padx=5)
+
         load_data()
 
         self.create_button(frame, "Назад", self.show_main_menu).pack(pady=10)
 
+    # --- ЛОГИКА ИГР (ОБЩИЕ МЕТОДЫ) ---
     def create_match(self, game_name):
         cur = self.conn.cursor()
         try:
@@ -436,8 +537,8 @@ class App:
                 return None
 
             cur.execute(
-                "INSERT INTO Matches (games) VALUES (%s) RETURNING match_id",
-                (row[0],)
+                "INSERT INTO Matches (session_id, game_id) VALUES (%s, %s) RETURNING match_id",
+                (self.current_user["session_id"], row[0])
             )
             match_id = cur.fetchone()[0]
             self.conn.commit()
@@ -468,28 +569,28 @@ class App:
         finally:
             cur.close()
 
+    # --- ИГРА: КЛИКЕР ---
     def play_clicker(self):
-        win = tk.Toplevel(self.root)
-        win.title("Кликер")
-        win.geometry("400x300")
-        win.configure(bg=BG_COLOR)
+        self.clear_frame()
+        frame = tk.Frame(self.root, bg=BG_COLOR, padx=20, pady=20)
+        frame.pack(expand=True)
 
         match_id = self.create_match('clicker')
         if not match_id:
-            win.destroy()
+            self.show_main_menu()
             return
 
         clicks = 0
         time_left = 10
         running = False
 
-        label = self.create_label(win, "Нажмите Старт", font=("Arial", 20))
+        label = self.create_label(frame, "Нажмите Старт", font=("Arial", 20))
         label.pack(pady=20)
 
-        clicks_label = self.create_label(win, f"Кликов: {clicks}", font=("Arial", 16))
+        clicks_label = self.create_label(frame, f"Кликов: {clicks}", font=("Arial", 16))
         clicks_label.pack(pady=10)
 
-        time_label = self.create_label(win, f"Время: {time_left}с", font=("Arial", 16))
+        time_label = self.create_label(frame, f"Время: {time_left}с", font=("Arial", 16))
         time_label.pack(pady=10)
 
         def on_click():
@@ -503,7 +604,7 @@ class App:
             if time_left > 0 and running:
                 time_left -= 1
                 time_label.config(text=f"Время: {time_left}с")
-                win.after(1000, countdown)
+                self.root.after(1000, countdown)
             elif running:
                 running = False
                 self.save_match_result(match_id, self.current_user["user_id"], click_count=clicks)
@@ -511,6 +612,8 @@ class App:
                 click_btn.config(state=tk.DISABLED)
                 start_btn.config(state=tk.DISABLED)
                 messagebox.showinfo("Результат", f"Вы сделали {clicks} кликов!")
+                # Возврат в меню после закрытия сообщения
+                self.root.after(100, self.show_main_menu)
 
         def start_game():
             nonlocal running, time_left, clicks
@@ -523,37 +626,40 @@ class App:
             start_btn.config(state=tk.DISABLED)
             countdown()
 
-        click_btn = tk.Button(win, text="КЛИК!", width=20, height=3, command=on_click,
+        click_btn = tk.Button(frame, text="КЛИК!", width=20, height=3, command=on_click,
                               bg=BTN_BG, fg=BTN_FG, activebackground=ACCENT_COLOR, relief=tk.FLAT)
         click_btn.pack(pady=10)
 
-        start_btn = tk.Button(win, text="Старт", width=20, command=start_game,
+        start_btn = tk.Button(frame, text="Старт", width=20, command=start_game,
                               bg=BTN_BG, fg=BTN_FG, activebackground=ACCENT_COLOR, relief=tk.FLAT)
         start_btn.pack(pady=10)
 
+        self.create_button(frame, "Отмена", self.show_main_menu).pack(pady=10)
+
+    # --- ИГРА: УГАДАЙ ЧИСЛО ---
     def play_guessnumber(self):
-        win = tk.Toplevel(self.root)
-        win.title("Угадай число")
-        win.geometry("400x300")
-        win.configure(bg=BG_COLOR)
+        self.clear_frame()
+        frame = tk.Frame(self.root, bg=BG_COLOR, padx=20, pady=20)
+        frame.pack(expand=True)
 
         match_id = self.create_match('guessnumber')
         if not match_id:
-            win.destroy()
+            self.show_main_menu()
             return
 
         secret = random.randint(1, 100)
         attempts = 0
         max_attempts = 10
 
-        label = self.create_label(win, f"Я загадал число от 1 до 100.\nУ тебя {max_attempts} попыток.", font=("Arial", 14))
+        label = self.create_label(frame, f"Я загадал число от 1 до 100.\nУ тебя {max_attempts} попыток.",
+                                  font=("Arial", 14))
         label.pack(pady=20)
 
-        entry = self.create_entry(win, width=10)
+        entry = self.create_entry(frame, width=10)
         entry.config(font=("Arial", 16))
         entry.pack(pady=10)
 
-        result_label = self.create_label(win, "", font=("Arial", 14))
+        result_label = self.create_label(frame, "", font=("Arial", 14))
         result_label.pack(pady=10)
 
         def check_guess():
@@ -571,12 +677,14 @@ class App:
                 entry.config(state=tk.DISABLED)
                 btn.config(state=tk.DISABLED)
                 messagebox.showinfo("Победа", f"Число было {secret}. Попыток: {attempts}")
+                self.root.after(100, self.show_main_menu)
             elif attempts >= max_attempts:
                 self.save_match_result(match_id, self.current_user["user_id"], guess_attempts=attempts, result='loss')
                 result_label.config(text=f"Проиграл. Число было {secret}.")
                 entry.config(state=tk.DISABLED)
                 btn.config(state=tk.DISABLED)
                 messagebox.showinfo("Проигрыш", f"Число было {secret}.")
+                self.root.after(100, self.show_main_menu)
             elif guess < secret:
                 result_label.config(text=f"Больше. Попытка {attempts}/{max_attempts}")
             else:
@@ -584,27 +692,29 @@ class App:
 
             entry.delete(0, tk.END)
 
-        btn = tk.Button(win, text="Проверить", width=20, command=check_guess,
+        btn = tk.Button(frame, text="Проверить", width=20, command=check_guess,
                         bg=BTN_BG, fg=BTN_FG, activebackground=ACCENT_COLOR, relief=tk.FLAT)
         btn.pack(pady=10)
 
+        self.create_button(frame, "Отмена", self.show_main_menu).pack(pady=10)
+
+    # --- ИГРА: КРЕСТИКИ-НОЛИКИ ---
     def play_tictactoe(self):
-        win = tk.Toplevel(self.root)
-        win.title("Крестики-нолики")
-        win.geometry("900x500")
-        win.configure(bg=BG_COLOR)
+        self.clear_frame()
+        frame = tk.Frame(self.root, bg=BG_COLOR, padx=20, pady=20)
+        frame.pack(expand=True)
 
         match_id = self.create_match('tictactoe')
         if not match_id:
-            win.destroy()
+            self.show_main_menu()
             return
 
         board = [' '] * 9
         buttons = []
 
         def check_win(b, mark):
-            wins = [(0,1,2),(3,4,5),(6,7,8),(0,3,6),(1,4,7),(2,5,8),(0,4,8),(2,4,6)]
-            return any(b[a]==b[b_]==b[c]==mark for a,b_,c in wins)
+            wins = [(0, 1, 2), (3, 4, 5), (6, 7, 8), (0, 3, 6), (1, 4, 7), (2, 5, 8), (0, 4, 8), (2, 4, 6)]
+            return any(b[a] == b[b_] == b[c] == mark for a, b_, c in wins)
 
         def on_click(idx):
             if board[idx] != ' ' or buttons[idx]['state'] == tk.DISABLED:
@@ -617,12 +727,14 @@ class App:
                 self.save_match_result(match_id, self.current_user["user_id"], result='win')
                 messagebox.showinfo("Победа", "Вы победили!")
                 disable_all()
+                self.root.after(100, self.show_main_menu)
                 return
 
             if ' ' not in board:
                 self.save_match_result(match_id, self.current_user["user_id"], result='draw')
                 messagebox.showinfo("Ничья", "Ничья!")
                 disable_all()
+                self.root.after(100, self.show_main_menu)
                 return
 
             empty = [i for i, x in enumerate(board) if x == ' ']
@@ -634,28 +746,33 @@ class App:
                 self.save_match_result(match_id, self.current_user["user_id"], result='loss')
                 messagebox.showinfo("Проигрыш", "Компьютер победил.")
                 disable_all()
+                self.root.after(100, self.show_main_menu)
                 return
 
             if ' ' not in board:
                 self.save_match_result(match_id, self.current_user["user_id"], result='draw')
                 messagebox.showinfo("Ничья", "Ничья!")
                 disable_all()
+                self.root.after(100, self.show_main_menu)
                 return
 
         def disable_all():
             for b in buttons:
                 b.config(state=tk.DISABLED)
 
-        frame = tk.Frame(win, bg=BG_COLOR)
-        frame.pack(pady=20)
+        grid_frame = tk.Frame(frame, bg=BG_COLOR)
+        grid_frame.pack(pady=20)
 
         for i in range(9):
-            btn = tk.Button(frame, text=' ', width=10, height=3, font=("Arial", 20),
-                           command=lambda idx=i: on_click(idx),
-                           bg=BTN_BG, fg=BTN_FG, activebackground=ACCENT_COLOR, relief=tk.FLAT)
-            btn.grid(row=i//3, column=i%3, padx=5, pady=5)
+            btn = tk.Button(grid_frame, text=' ', width=10, height=3, font=("Arial", 20),
+                            command=lambda idx=i: on_click(idx),
+                            bg=BTN_BG, fg=BTN_FG, activebackground=ACCENT_COLOR, relief=tk.FLAT)
+            btn.grid(row=i // 3, column=i % 3, padx=5, pady=5)
             buttons.append(btn)
 
+        self.create_button(frame, "Отмена", self.show_main_menu).pack(pady=10)
+
+    # --- АДМИН ПАНЕЛЬ ---
     def admin_ban(self):
         target = simpledialog.askstring("Бан", "Никнейм пользователя для бана:")
         if not target:
@@ -714,7 +831,7 @@ class App:
                 return
 
             cur.execute(
-                "UPDATE Users SET rolename = %s WHERE user_id = %s",
+                "UPDATE Users SET role_id = %s WHERE user_id = %s",
                 (mod_role[0], target_row[0])
             )
             self.conn.commit()
