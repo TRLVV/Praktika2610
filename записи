@@ -1,0 +1,109 @@
+TRUNCATE Bans, MatchStats, Matches, Sessions, Users, Servers, Games, Roles, Regions RESTART IDENTITY CASCADE;
+
+INSERT INTO Regions (region_name) VALUES 
+('Europe'),
+('North America'),
+('Asia');
+
+INSERT INTO Roles (role_name) VALUES 
+('admin'),
+('mod'),
+('user')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO Servers (region, ip_address, port, status)
+SELECT 
+    r.region_id,
+    ('192.168.' || floor(random() * 255)::int || '.' || floor(random() * 255)::int)::inet,
+    (floor(random() * 64000) + 1024)::int,
+    CASE 
+        WHEN random() < 0.7 THEN 'online'
+        WHEN random() < 0.9 THEN 'offline'
+        ELSE 'maintenance'
+    END
+FROM Regions r
+CROSS JOIN generate_series(1, 5);
+
+INSERT INTO Users (role_id, region_id, username, password)
+SELECT 
+    CASE 
+        WHEN random() < 0.7 THEN (SELECT role_id FROM Roles WHERE role_name = 'user')
+        WHEN random() < 0.9 THEN (SELECT role_id FROM Roles WHERE role_name = 'mod')
+        ELSE (SELECT role_id FROM Roles WHERE role_name = 'admin')
+    END as role_id,
+    (SELECT region_id FROM Regions ORDER BY random() LIMIT 1) as region_id,
+    'user_' || i as username,
+    '$2b$12$LJ3m4ys3Lk9XqZ8vN2pQrOeW5tY6uI7oP8aS9dF0gH1jK2lM3nB4c' as password
+FROM generate_series(1, 100) as i;
+
+INSERT INTO Sessions (user_id, started_at, ended_at)
+SELECT 
+    u.user_id,
+    started,
+    CASE 
+        WHEN random() < 0.8 THEN started + ((random() * interval '4 hours') + interval '1 hour')
+        ELSE NULL
+    END as ended_at
+FROM Users u
+CROSS JOIN LATERAL (SELECT now() - (random() * interval '30 days') as started) s
+CROSS JOIN generate_series(1, 3) as gs
+WHERE random() < 0.7;
+
+INSERT INTO Games (game_name) VALUES 
+('clicker'),
+('tictactoe'),
+('guessnumber')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO Matches (session_id, game_id, started_at, ended_at)
+SELECT 
+    s.session_id,
+    ((ROW_NUMBER() OVER (PARTITION BY s.session_id ORDER BY random()) - 1) % 3 + 1)::int as game_id,
+    match_start,
+    match_start + ((random() * interval '25 minutes') + interval '5 minutes') as ended_at
+FROM Sessions s
+CROSS JOIN LATERAL (SELECT s.started_at + (random() * interval '30 minutes') as match_start) m
+CROSS JOIN generate_series(1, 3) as gs
+WHERE s.ended_at IS NOT NULL
+AND random() < 0.6;
+
+INSERT INTO MatchStats (match_id, user_id, click_count, guess_attempts, result)
+SELECT 
+    m.match_id,
+    s.user_id,
+    CASE 
+        WHEN g.game_name = 'clicker' THEN (floor(random() * 100) + 1)::int
+        ELSE NULL
+    END as click_count,
+    CASE 
+        WHEN g.game_name = 'guessnumber' THEN (floor(random() * 10) + 1)::int
+        ELSE NULL
+    END as guess_attempts,
+    CASE 
+        WHEN g.game_name = 'clicker' THEN NULL
+        WHEN g.game_name = 'guessnumber' AND random() < 0.3 THEN 'win'
+        WHEN g.game_name = 'guessnumber' THEN 'loss'
+        WHEN g.game_name = 'tictactoe' AND random() < 0.4 THEN 'win'
+        WHEN g.game_name = 'tictactoe' AND random() < 0.7 THEN 'loss'
+        ELSE 'draw'
+    END as result
+FROM Matches m
+JOIN Sessions s ON m.session_id = s.session_id
+JOIN Games g ON m.game_id = g.game_id;
+
+INSERT INTO Bans (banned_user_id, banned_by_user_id, reason, ban_expires)
+SELECT 
+    u.user_id,
+    (SELECT user_id FROM Users WHERE role_id = (SELECT role_id FROM Roles WHERE role_name = 'admin') ORDER BY user_id LIMIT 1) as banned_by_user_id,
+    CASE 
+        WHEN random() < 0.5 THEN 'Нарушение правил'
+        WHEN random() < 0.8 THEN 'Читерство'
+        ELSE 'Оскорбления'
+    END as reason,
+    CASE 
+        WHEN random() < 0.3 THEN now() + (random() * interval '30 days')
+        ELSE NULL
+    END as ban_expires
+FROM Users u
+WHERE u.role_id != (SELECT role_id FROM Roles WHERE role_name = 'admin')
+AND random() < 0.1;
